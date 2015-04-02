@@ -1,0 +1,381 @@
+package main
+
+import (
+	"bytes"
+	"code.google.com/p/go.net/html"
+	//"code.google.com/p/go.net/html/atom"
+	"compress/gzip"
+	"fmt"
+	term "github.com/nsf/termbox-go"
+	sel "github.com/nvlled/selec"
+	"github.com/nvlled/wind"
+	//"github.com/nvlled/wind/size"
+	"errors"
+	"io"
+	"io/ioutil"
+	"math/rand"
+	"net/http"
+	"os"
+	"path"
+	"strings"
+	"time"
+)
+
+var (
+	viewSize    = 28
+	buildDir    = "build"
+	tocFilename = "toc"
+	pageDir     = path.Join(os.Getenv("HOME"), "hnpages/new")
+	cacheDir    = "cache"
+	indexDir    = path.Join(cacheDir, "index")
+)
+
+//var ft = localFetcher{}
+
+var ft = remoteFetcher{}
+
+func main() {
+	var toc Toc
+	var less *less
+	var browser *TocBrowser
+	var info = infoBar{""}
+
+	mainLayer := createLayer(
+		wind.Defer(func() wind.Layer {
+			if browser == nil {
+				// avoid erroneous nil comparison
+				return nil
+			}
+			return browser.Layer()
+		}),
+		wind.Defer(func() wind.Layer {
+			if less == nil {
+				// avoid erroneous nil comparison
+				return nil
+			}
+			return less
+		}),
+		&info,
+	)
+
+	term.Init()
+	canvas := wind.NewTermCanvas()
+
+	draw := make(chan int, 1)
+	redraw := func() { draw <- 1 }
+	blocked := false
+	block := func(s string) { info.contents = s; redraw(); blocked = true }
+	unblock := func() { info.contents = ""; redraw(); blocked = false }
+
+	events := NewEvents()
+
+	// everytime an event has been processed, invoke redraw()
+	events.Done = func(_ term.Event) { redraw() }
+
+	// draw thread
+	go func() {
+		for range draw {
+			canvas.Clear()
+			mainLayer.Render(canvas)
+			term.Flush()
+		}
+	}()
+
+	// input thread
+	go func() {
+		for {
+			e := term.PollEvent()
+			if e.Key == term.KeyCtrlC {
+				term.Close()
+				os.Exit(0)
+			}
+			if !blocked {
+				events.C <- e
+			}
+		}
+	}()
+
+	block("fetching page...")
+	redraw()
+	currentPage := 1
+	toc, err := ft.fetchLinkPage(currentPage)
+	if err != nil {
+		term.Close()
+		println(err.Error())
+		return
+	}
+	browser = NewTocBrowser(viewSize, formatToc(toc))
+	unblock()
+	redraw()
+
+	events.Each(func(e term.Event) (abort bool) {
+		switch e.Key {
+
+		case term.KeyCtrlR:
+			// TODO: reload
+
+		// TODO: save fetched pages
+		case term.KeyCtrlN:
+			currentPage++
+			block("fetching next page...")
+			toc, _ = ft.fetchLinkPage(currentPage)
+			unblock()
+			browser = NewTocBrowser(viewSize, formatToc(toc))
+		case term.KeyCtrlP:
+			if currentPage > 1 {
+				currentPage--
+				block("fetching prev page...")
+				toc, _ = ft.fetchLinkPage(currentPage)
+				unblock()
+				browser = NewTocBrowser(viewSize, formatToc(toc))
+			}
+
+		// Navigation
+		case term.KeyCtrlC:
+			abort = true
+		case term.KeyArrowDown:
+			browser.SelectDown()
+		case term.KeyArrowUp:
+			browser.SelectUp()
+		case term.KeyHome:
+			browser.MoveStart()
+		case term.KeyEnd:
+			browser.MoveEnd()
+		case term.KeyPgup:
+			browser.MovePrevPage()
+		case term.KeyPgdn:
+			browser.MoveNextPage()
+
+		case term.KeyEnter:
+			events_ := events.Fork()
+			go func() {
+				for e := range events.C {
+					if e.Ch == 'q' {
+						close(events_.C)
+						info.contents = ""
+						break
+					}
+					events_.C <- e
+				}
+			}()
+			block("fetching page...")
+			redraw()
+
+			i := browser.SelectedIndex()
+			entry := toc[i]
+			text, err := ft.fetchItem(entry.ItemId)
+			cacheItem(entry, text)
+
+			if err != nil {
+				text = fmt.Sprintf("[%s]ERROR :: %s", entry.ItemId, err.Error())
+			}
+			less = NewLess(viewSize, text)
+
+			unblock()
+			redraw()
+			viewText(events_, less)
+			less = nil
+		}
+
+		return
+	})
+}
+
+func createLayer(browser wind.Layer, threadView wind.Defer, info *infoBar) wind.Layer {
+	return wind.Vlayer(
+		wind.SetColor(
+			uint16(term.ColorRed),
+			uint16(term.ColorDefault),
+			wind.Text(`
+			┃  │ │╲  ┃
+			┃──│ │ ╲ ┃ offline
+			┃  │ │  ╲┃
+			`),
+		),
+		wind.Line('─'),
+		wind.SizeH(
+			viewSize,
+			wind.Either(
+				threadView,
+				browser,
+			),
+		),
+		wind.Line('─'),
+		info,
+	)
+}
+
+func viewText(events *Events, less *less) {
+	events.Each(func(e term.Event) (abort bool) {
+		switch e.Key {
+		case term.KeyHome:
+			less.Home()
+		case term.KeyEnd:
+			less.End()
+		case term.KeyPgdn:
+			less.PageDown()
+		case term.KeyPgup:
+			less.PageUp()
+		case term.KeyArrowUp:
+			less.ScrollUp()
+		case term.KeyArrowDown:
+			less.ScrollDown()
+		}
+		return
+	})
+}
+
+func formatToc(toc Toc) []string {
+	var lines []string
+	for i, entry := range toc {
+		lines = append(lines, fmt.Sprintf("%3d. %s %s by %s [%d] [id=%s]",
+			i+1,
+			entry.Title,
+			entry.Sitebit,
+			entry.Username,
+			entry.NumComments,
+			entry.ItemId,
+		))
+	}
+	return lines
+}
+
+func nap() {
+	time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
+}
+
+// I should probably use a proper API
+
+//https://news.ycombinator.com/news?p=1
+const baseUrl = "https://news.ycombinator.com"
+
+type fetcher interface {
+	fetchLinkPage(pageno int) (Toc, error)
+	fetchItem(id string) (string, error)
+}
+
+type remoteFetcher struct{}
+
+// p=0 and p=1 returns the same page
+func (_ remoteFetcher) fetchLinkPage(pageno int) (Toc, error) {
+	resp, err := http.Get(fmt.Sprintf("%s/news?p=%d", baseUrl, pageno))
+	if err != nil {
+		return nil, err
+	}
+	return parseLinkPage(resp.Body)
+}
+
+func (_ remoteFetcher) fetchItem(id string) (string, error) {
+	filename := fmt.Sprintf("%s/item?id=%s", baseUrl, id)
+	resp, err := http.Get(filename)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode/400 == 4 {
+		return "", errors.New("Welp: :" + resp.Status)
+	}
+	return htmlToText(resp.Body)
+}
+
+type localFetcher struct{}
+
+func (_ localFetcher) fetchLinkPage(pageno int) (Toc, error) {
+	nap()
+	filename := fmt.Sprintf("links/%d.html", pageno)
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	return parseLinkPage(file)
+}
+
+func (_ localFetcher) fetchItem(id string) (string, error) {
+	nap()
+	filename := fmt.Sprintf("items/%s.html", id)
+	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	return htmlToText(file)
+}
+
+func loadToc() Toc {
+	os.Mkdir(buildDir, os.ModeDir|0775)
+
+	var toc Toc
+	var err error
+
+	filename := path.Join(buildDir, tocFilename)
+	fmt.Printf("*** deserializing toc from %s\n", filename)
+	toc, err = deserializeToc(filename)
+
+	if err != nil {
+		fmt.Printf("*** deserialization from %s failed, %v\n", filename, err.Error())
+
+		fmt.Printf("*** building toc from %s\n", pageDir)
+		toc, err = buildTOC(pageDir)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("*** serializing toc to %s\n", filename)
+		err = serializeToc(toc, filename)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return toc
+}
+
+func htmlToText(r io.Reader) (string, error) {
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	buf := bytes.NewBuffer(data)
+
+	var node *html.Node
+	if gfile, err := gzip.NewReader(buf); err == nil {
+		node, err = html.Parse(gfile)
+		gfile.Close()
+	} else {
+		node, err = html.Parse(buf)
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	aTable := sel.And(sel.Tag("table"), sel.AttrOnly("border", "0"))
+	posts := sel.SelectAll(node, aTable)
+	if len(posts) < 1 {
+		return "", errors.New("no posts found, probably not a valid hn page\n" + string(data))
+	}
+
+	buffer := bytes.NewBuffer(nil)
+	opNode := posts[0]
+	op := parseOp(opNode)
+	fmt.Fprintln(buffer, op)
+
+	if len(posts) < 3 {
+		fmt.Fprintln(buffer, "(no comments)")
+	} else {
+		for _, post := range posts[2:] {
+			fmt.Fprintln(buffer, parseComment(post))
+		}
+	}
+	return buffer.String(), nil
+}
+
+func cacheItem(entry *TocEntry, text string) {
+	os.Mkdir(cacheDir, os.ModeDir|0755)
+	os.Mkdir(indexDir, os.ModeDir|0755)
+
+	title := strings.ToLower(strings.Replace(entry.Title, " ", "-", -1))
+
+	textname := fmt.Sprintf("%s-%s.txt", entry.ItemId, title)
+	ioutil.WriteFile(path.Join(cacheDir, textname), []byte(text), 0644)
+
+	symname := path.Join(indexDir, entry.ItemId)
+	os.Symlink(path.Join("..", textname), symname)
+}
