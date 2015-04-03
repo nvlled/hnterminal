@@ -63,7 +63,6 @@ func (com Comment) String() string {
 			lines_ = append(lines_, "")
 		} else {
 			for _, subline := range sublines {
-				//subline = indent(strings.TrimSpace(subline), com.level)
 				subline = indent(subline, com.level)
 				lines_ = append(lines_, subline)
 			}
@@ -75,16 +74,19 @@ func (com Comment) String() string {
 
 type Op struct {
 	title string
+	link  string
 	Comment
 }
 
 func (op Op) String() string {
-	s := fmt.Sprintf("# %s\n[%s]\n\n%s",
+	s := fmt.Sprintf(
+		"# %s\n[%s]\n\n%s",
 		op.title,
 		op.Comment.username,
 		op.Comment.body,
 	)
-	return strings.Join(chopAll(s, MAX_LINE_LEN), "\n") +
+	return fmt.Sprintf("# %s\n", op.link) +
+		strings.Join(chopAll(s, MAX_LINE_LEN), "\n") +
 		"\n────────────────────────────────────────"
 }
 
@@ -92,7 +94,6 @@ func parseOp(node *html.Node) Op {
 	titleSel := []sel.Pred{
 		sel.And(sel.Tag("td"), sel.Class("title")),
 		sel.Tag("a"),
-		sel.Text,
 	}
 	usernameSel := []sel.Pred{
 		sel.And(sel.Tag("td"), sel.Class("subtext")),
@@ -105,9 +106,11 @@ func parseOp(node *html.Node) Op {
 	if len(rows) >= 3 {
 		body = sel.TextContent(sel.SelectAll(rows[3], sel.Tag("td"))[1])
 	}
+	titleLink := sel.SelectOne(node, titleSel...)
 
 	return Op{
-		getData(sel.SelectOne(node, titleSel...)),
+		sel.TextContent(titleLink),
+		strings.TrimSpace(sel.AttrVal(titleLink, "href")),
 		Comment{
 			username: getData(sel.SelectOne(node, usernameSel...)),
 			body:     body,

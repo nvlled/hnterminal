@@ -18,6 +18,8 @@ type TocEntry struct {
 	Sitebit     string
 	ItemId      string
 	NumComments int
+	Link        string
+	IsExternal  bool
 }
 
 type Toc []*TocEntry
@@ -132,10 +134,14 @@ func parseLinkPage(r io.Reader) (Toc, error) {
 			n, _ := strconv.Atoi(numText)
 			return n
 		}()
+		titleLink := sel.SelectOne(tr1, titleSel...)
+		sitebit := sel.SelectOne(tr1, sitebitSel...)
 
 		entry := &TocEntry{
-			Title:       sel.TextContent(sel.SelectOne(tr1, titleSel...)),
-			Sitebit:     sel.TextContent(sel.SelectOne(tr1, sitebitSel...)),
+			Title:       sel.TextContent(titleLink),
+			Link:        sel.AttrVal(titleLink, "href"),
+			IsExternal:  sitebit == nil,
+			Sitebit:     sel.TextContent(sitebit),
 			Username:    sel.TextContent(sel.SelectOne(tr2, usernameSel...)),
 			ItemId:      itemId,
 			NumComments: numComments,

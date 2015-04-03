@@ -3,14 +3,12 @@ package main
 import (
 	"bytes"
 	"code.google.com/p/go.net/html"
-	//"code.google.com/p/go.net/html/atom"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	term "github.com/nsf/termbox-go"
 	sel "github.com/nvlled/selec"
 	"github.com/nvlled/wind"
-	//"github.com/nvlled/wind/size"
-	"errors"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -199,7 +197,7 @@ func createLayer(browser wind.Layer, threadView wind.Defer, info *infoBar) wind.
 			uint16(term.ColorDefault),
 			wind.Text(`
 			┃  │ │╲  ┃
-			┃──│ │ ╲ ┃ offline
+			┃──│ │ ╲ ┃ terminal
 			┃  │ │  ╲┃
 			`),
 		),

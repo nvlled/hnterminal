@@ -6,7 +6,6 @@ import (
 )
 
 func chop(r string, maxlen int) (string, string) {
-	// TODO: rename variable names
 	if len(r) < maxlen {
 		return r, ""
 	}
