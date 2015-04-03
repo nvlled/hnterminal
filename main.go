@@ -40,6 +40,7 @@ func main() {
 	var browser *TocBrowser
 	var info = infoBar{""}
 	currentPage := 1
+	tocOffset := 0
 
 	mainLayer := createLayer(
 		wind.Defer(func() wind.Layer {
@@ -85,11 +86,20 @@ func main() {
 		unblock()
 		return less_
 	}
-	loadLinkPage := func() {
+	loadLinkPage := func(n int) {
 		block("fetching page...")
-		toc, _ = ft.fetchLinkPage(currentPage)
+		currentPage += n
+
+		newToc, _ := ft.fetchLinkPage(currentPage)
+		if n > 0 {
+			tocOffset += len(toc) * n
+		} else {
+			tocOffset += len(newToc) * n
+		}
+
+		toc = newToc
 		unblock()
-		browser = NewTocBrowser(viewSize, formatToc(toc))
+		browser = NewTocBrowser(viewSize, formatToc(toc, tocOffset))
 	}
 
 	events := NewEvents()
@@ -128,7 +138,7 @@ func main() {
 		println(err.Error())
 		return
 	}
-	browser = NewTocBrowser(viewSize, formatToc(toc))
+	browser = NewTocBrowser(viewSize, formatToc(toc, tocOffset))
 	unblock()
 	redraw()
 
@@ -136,14 +146,12 @@ func main() {
 		switch e.Key {
 
 		case term.KeyCtrlR:
-			loadLinkPage()
+			loadLinkPage(0)
 		case term.KeyCtrlN:
-			currentPage++
-			loadLinkPage()
+			loadLinkPage(1)
 		case term.KeyCtrlP:
 			if currentPage > 1 {
-				currentPage--
-				loadLinkPage()
+				loadLinkPage(-1)
 			}
 
 		// Navigation
@@ -230,11 +238,11 @@ func viewText(events *Events, less *less, refresh func() *less) {
 	})
 }
 
-func formatToc(toc Toc) []string {
+func formatToc(toc Toc, offset int) []string {
 	var lines []string
 	for i, entry := range toc {
 		lines = append(lines, fmt.Sprintf("%3d. %s %s by %s [%d] [id=%s]",
-			i+1,
+			i+1+offset,
 			entry.Title,
 			entry.Sitebit,
 			entry.Username,
