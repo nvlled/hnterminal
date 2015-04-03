@@ -36,9 +36,10 @@ var ft = remoteFetcher{}
 
 func main() {
 	var toc Toc
-	var less *less
+	var less_ *less
 	var browser *TocBrowser
 	var info = infoBar{""}
+	currentPage := 1
 
 	mainLayer := createLayer(
 		wind.Defer(func() wind.Layer {
@@ -49,11 +50,11 @@ func main() {
 			return browser.Layer()
 		}),
 		wind.Defer(func() wind.Layer {
-			if less == nil {
+			if less_ == nil {
 				// avoid erroneous nil comparison
 				return nil
 			}
-			return less
+			return less_
 		}),
 		&info,
 	)
@@ -66,6 +67,30 @@ func main() {
 	blocked := false
 	block := func(s string) { info.contents = s; redraw(); blocked = true }
 	unblock := func() { info.contents = ""; redraw(); blocked = false }
+
+	loadItem := func() *less {
+		block("fetching page...")
+		redraw()
+
+		i := browser.SelectedIndex()
+		entry := toc[i]
+		text, err := ft.fetchItem(entry.ItemId)
+		cacheItem(entry, text)
+
+		if err != nil {
+			text = fmt.Sprintf("[%s]ERROR :: %s", entry.ItemId, err.Error())
+		}
+		less_ = NewLess(viewSize, text)
+
+		unblock()
+		return less_
+	}
+	loadLinkPage := func() {
+		block("fetching page...")
+		toc, _ = ft.fetchLinkPage(currentPage)
+		unblock()
+		browser = NewTocBrowser(viewSize, formatToc(toc))
+	}
 
 	events := NewEvents()
 
@@ -97,7 +122,6 @@ func main() {
 
 	block("fetching page...")
 	redraw()
-	currentPage := 1
 	toc, err := ft.fetchLinkPage(currentPage)
 	if err != nil {
 		term.Close()
@@ -112,22 +136,14 @@ func main() {
 		switch e.Key {
 
 		case term.KeyCtrlR:
-			// TODO: reload
-
-		// TODO: save fetched pages
+			loadLinkPage()
 		case term.KeyCtrlN:
 			currentPage++
-			block("fetching next page...")
-			toc, _ = ft.fetchLinkPage(currentPage)
-			unblock()
-			browser = NewTocBrowser(viewSize, formatToc(toc))
+			loadLinkPage()
 		case term.KeyCtrlP:
 			if currentPage > 1 {
 				currentPage--
-				block("fetching prev page...")
-				toc, _ = ft.fetchLinkPage(currentPage)
-				unblock()
-				browser = NewTocBrowser(viewSize, formatToc(toc))
+				loadLinkPage()
 			}
 
 		// Navigation
@@ -158,23 +174,10 @@ func main() {
 					events_.C <- e
 				}
 			}()
-			block("fetching page...")
+			less_ = loadItem()
+			viewText(events_, less_, loadItem)
 			redraw()
-
-			i := browser.SelectedIndex()
-			entry := toc[i]
-			text, err := ft.fetchItem(entry.ItemId)
-			cacheItem(entry, text)
-
-			if err != nil {
-				text = fmt.Sprintf("[%s]ERROR :: %s", entry.ItemId, err.Error())
-			}
-			less = NewLess(viewSize, text)
-
-			unblock()
-			redraw()
-			viewText(events_, less)
-			less = nil
+			less_ = nil
 		}
 
 		return
@@ -205,7 +208,7 @@ func createLayer(browser wind.Layer, threadView wind.Defer, info *infoBar) wind.
 	)
 }
 
-func viewText(events *Events, less *less) {
+func viewText(events *Events, less *less, refresh func() *less) {
 	events.Each(func(e term.Event) (abort bool) {
 		switch e.Key {
 		case term.KeyHome:
@@ -220,6 +223,8 @@ func viewText(events *Events, less *less) {
 			less.ScrollUp()
 		case term.KeyArrowDown:
 			less.ScrollDown()
+		case term.KeyCtrlR:
+			less = refresh()
 		}
 		return
 	})
