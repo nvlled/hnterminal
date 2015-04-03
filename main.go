@@ -99,6 +99,16 @@ func main() {
 		unblock()
 		browser = NewTocBrowser(viewSize, formatToc(toc, tocOffset))
 	}
+	saveItemLink := func() {
+		i := browser.SelectedIndex()
+		entry := toc[i]
+		block("fetching [" + entry.Link + "]")
+		err := savePage(entry)
+		unblock()
+		if err != nil {
+			info.contents = "error : " + err.Error() + "; [" + entry.Link + "]"
+		}
+	}
 
 	events := NewEvents()
 
@@ -152,6 +162,9 @@ func main() {
 				loadLinkPage(-1)
 			}
 
+		case term.KeyCtrlS:
+			saveItemLink()
+
 		// Navigation
 		case term.KeyCtrlC:
 			abort = true
@@ -176,8 +189,11 @@ func main() {
 						close(events_.C)
 						info.contents = ""
 						break
+					} else if e.Key == term.KeyCtrlS {
+						saveItemLink()
+					} else {
+						events_.C <- e
 					}
-					events_.C <- e
 				}
 			}()
 			less_ = loadItem()
@@ -389,4 +405,25 @@ func cacheItem(entry *TocEntry, text string) {
 
 	symname := path.Join(indexDir, entry.ItemId)
 	os.Symlink(path.Join("..", textname), symname)
+}
+
+func savePage(entry *TocEntry) error {
+	if !entry.IsExternal {
+		return nil
+	}
+
+	os.Mkdir(cacheDir, os.ModeDir|0755)
+	os.Mkdir(indexDir, os.ModeDir|0755)
+
+	resp, err := http.Get(entry.Link)
+	if err != nil {
+		return err
+	}
+	filename := fmt.Sprintf("%s/%d-link.txt", cacheDir, entry.ItemId)
+	destFile, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(destFile, resp.Body)
+	return err
 }

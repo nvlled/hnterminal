@@ -25,7 +25,7 @@ type TocEntry struct {
 type Toc []*TocEntry
 
 var titleSel = []sel.Pred{
-	sel.TagAttr("td", "class", "title"),
+	sel.TagAttrOnly("td", "class", "title"),
 	sel.Tag("a"),
 }
 
@@ -107,10 +107,6 @@ func parseLinkPage(r io.Reader) (Toc, error) {
 	table := tables[2]
 	var toc Toc
 
-	titleSel := []sel.Pred{
-		sel.TagAttrOnly("td", "class", "title"),
-		sel.Tag("a"),
-	}
 	ncomSel := []sel.Pred{
 		sel.And(sel.Tag("td"), sel.Class("subtext")),
 		sel.Last(sel.Tag("a")),
@@ -135,13 +131,13 @@ func parseLinkPage(r io.Reader) (Toc, error) {
 			return n
 		}()
 		titleLink := sel.SelectOne(tr1, titleSel...)
-		sitebit := sel.SelectOne(tr1, sitebitSel...)
+		sitebit := sel.TextContent(sel.SelectOne(tr1, sitebitSel...))
 
 		entry := &TocEntry{
-			Title:       sel.TextContent(titleLink),
 			Link:        sel.AttrVal(titleLink, "href"),
-			IsExternal:  sitebit == nil,
-			Sitebit:     sel.TextContent(sitebit),
+			Title:       sel.TextContent(titleLink),
+			IsExternal:  strings.TrimSpace(sitebit) != "",
+			Sitebit:     sitebit,
 			Username:    sel.TextContent(sel.SelectOne(tr2, usernameSel...)),
 			ItemId:      itemId,
 			NumComments: numComments,
