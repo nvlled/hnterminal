@@ -37,6 +37,7 @@ func main() {
 	var less_ *less
 	var browser *TocBrowser
 	var info = infoBar{""}
+	var formattedToc []string
 	currentPage := 1
 	tocOffset := 0
 
@@ -97,7 +98,8 @@ func main() {
 
 		toc = newToc
 		unblock()
-		browser = NewTocBrowser(viewSize, formatToc(toc, tocOffset))
+		formattedToc = formatToc(toc, tocOffset)
+		browser = NewTocBrowser(viewSize, formattedToc)
 	}
 	saveItemLink := func() {
 		i := browser.SelectedIndex()
@@ -131,6 +133,12 @@ func main() {
 			if e.Key == term.KeyCtrlC {
 				term.Close()
 				os.Exit(0)
+			} else if e.Type == term.EventResize {
+				wind.ClearCache(mainLayer)
+				// tocBrowser doesn't properly resize,
+				// just create a new one as a temp fix
+				browser = NewTocBrowser(viewSize, formattedToc)
+				redraw()
 			}
 			if !blocked {
 				events.C <- e
@@ -146,7 +154,8 @@ func main() {
 		println(err.Error())
 		return
 	}
-	browser = NewTocBrowser(viewSize, formatToc(toc, tocOffset))
+	formattedToc = formatToc(toc, tocOffset)
+	browser = NewTocBrowser(viewSize, formattedToc)
 	unblock()
 	redraw()
 
