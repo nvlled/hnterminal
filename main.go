@@ -5,6 +5,7 @@ import (
 	"code.google.com/p/go.net/html"
 	"compress/gzip"
 	"errors"
+	"flag"
 	"fmt"
 	term "github.com/nsf/termbox-go"
 	sel "github.com/nvlled/selec"
@@ -19,6 +20,8 @@ import (
 	"time"
 )
 
+// TODO: rename variable names
+
 var (
 	viewSize    = 28
 	buildDir    = "build"
@@ -28,11 +31,27 @@ var (
 	indexDir    = path.Join(cacheDir, "index")
 )
 
-//var ft = localFetcher{}
+type options struct {
+	local string
+}
 
-var ft = remoteFetcher{}
+func parseFlags() (options, []string) {
+	var opts options
+	flag.StringVar(&opts.local, "local", "", "set local directory")
+	flag.Parse()
+	return opts, flag.Args()
+}
 
 func main() {
+	opts, _ := parseFlags()
+	var ft fetcher
+	if opts.local != "" {
+		ft = newDirFetcher(opts.local)
+	} else {
+		ft = remoteFetcher{}
+	}
+
+	// TODO: aggregate in a struct
 	var toc Toc
 	var less_ *less
 	var browser *TocBrowser
@@ -329,6 +348,47 @@ func (_ localFetcher) fetchItem(id string) (string, error) {
 	nap()
 	filename := fmt.Sprintf("items/%s.html", id)
 	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	return htmlToText(file)
+}
+
+type dirFetcher struct {
+	toc   Toc
+	index map[string]*TocEntry
+}
+
+func newDirFetcher(dir string) *dirFetcher {
+	toc, err := buildTOC(dir)
+	index := make(map[string]*TocEntry)
+	for _, entry := range toc {
+		index[entry.ItemId] = entry
+	}
+	if err != nil {
+		panic(err)
+	}
+	return &dirFetcher{
+		toc:   toc,
+		index: index,
+	}
+}
+
+func (ft dirFetcher) fetchLinkPage(pageno int) (Toc, error) {
+	start := (pageno - 1) * viewSize
+	end := min(start+viewSize, len(ft.toc))
+	if start < len(ft.toc) {
+		return ft.toc[start:end], nil
+	}
+	return nil, errors.New("no more links")
+}
+
+func (ft dirFetcher) fetchItem(id string) (string, error) {
+	entry, ok := ft.index[id]
+	if !ok {
+		return "", errors.New("Item not found:" + id)
+	}
+	file, err := os.Open(entry.SourcePath)
 	if err != nil {
 		return "", err
 	}

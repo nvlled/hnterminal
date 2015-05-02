@@ -20,6 +20,7 @@ type TocEntry struct {
 	NumComments int
 	Link        string
 	IsExternal  bool
+	SourcePath  string
 }
 
 type Toc []*TocEntry
@@ -154,9 +155,9 @@ func parseTocEntry(node *html.Node) *TocEntry {
 	itemId := strings.TrimPrefix(href, "item?id=")
 
 	entry := &TocEntry{
-		Title:       selText(node, titleSel),
-		Username:    selText(node, usernameSel),
-		Sitebit:     selText(node, sitebitSel),
+		Title:       sel.TextContent(sel.SelectOne(node, titleSel...)),
+		Username:    sel.TextContent(sel.SelectOne(node, usernameSel...)),
+		Sitebit:     sel.TextContent(sel.SelectOne(node, sitebitSel...)),
 		ItemId:      itemId,
 		NumComments: len(sel.SelectAll(node, comheadSel...)) - 1, // minus one to exclude OP
 	}
@@ -191,6 +192,7 @@ func buildTOC(dirname string) (Toc, error) {
 		}
 
 		entry := parseTocEntry(node)
+		entry.SourcePath = fullname
 
 		if entry.NumComments >= 0 {
 			toc = append(toc, entry)
