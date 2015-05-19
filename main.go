@@ -14,7 +14,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
-	"net/http"
 	"os"
 	"path"
 	"strings"
@@ -157,116 +156,6 @@ func formatToc(toc Toc, offset int) []string {
 
 func nap() {
 	time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
-}
-
-// I should probably use a proper API
-
-//https://news.ycombinator.com/news?p=1
-const baseUrl = "https://news.ycombinator.com"
-
-type fetcher interface {
-	fetchLinkPage(pageno int) (Toc, error)
-	fetchItem(id string) (string, error)
-}
-
-type remoteFetcher struct{}
-
-// p=0 and p=1 returns the same page
-func (_ remoteFetcher) fetchLinkPage(pageno int) (Toc, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/news?p=%d", baseUrl, pageno))
-	if err != nil {
-		return nil, err
-	}
-	return parseLinkPage(resp.Body)
-}
-
-func (_ remoteFetcher) fetchItem(id string) (string, error) {
-	filename := fmt.Sprintf("%s/item?id=%s", baseUrl, id)
-	resp, err := http.Get(filename)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode/400 == 4 {
-		return "", errors.New("Welp: :" + resp.Status)
-	}
-	return htmlToText(resp.Body)
-}
-
-type localFetcher struct{}
-
-func (_ localFetcher) fetchLinkPage(pageno int) (Toc, error) {
-	nap()
-	filename := fmt.Sprintf("links/%d.html", pageno)
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	return parseLinkPage(file)
-}
-
-func (_ localFetcher) fetchItem(id string) (string, error) {
-	nap()
-	filename := fmt.Sprintf("items/%s.html", id)
-	file, err := os.Open(filename)
-	if err != nil {
-		return "", err
-	}
-	return htmlToText(file)
-}
-
-type dirFetcher struct {
-	toc   Toc
-	index map[string]*TocEntry
-	delay bool
-}
-
-func newDirFetcher(dir string, delayArg ...bool) *dirFetcher {
-	toc, err := buildTOC(dir)
-	index := make(map[string]*TocEntry)
-	for _, entry := range toc {
-		index[entry.ItemId] = entry
-	}
-	if err != nil {
-		panic(err)
-	}
-
-	delay := false
-	if len(delayArg) > 0 {
-		delay = delayArg[0]
-	}
-
-	return &dirFetcher{
-		toc:   toc,
-		index: index,
-		delay: delay,
-	}
-}
-
-func (ft dirFetcher) fetchLinkPage(pageno int) (Toc, error) {
-	if ft.delay {
-		nap()
-	}
-	start := (pageno - 1) * viewSize
-	end := min(start+viewSize, len(ft.toc))
-	if start < len(ft.toc) {
-		return ft.toc[start:end], nil
-	}
-	return nil, errors.New("no more links")
-}
-
-func (ft dirFetcher) fetchItem(id string) (string, error) {
-	if ft.delay {
-		nap()
-	}
-	entry, ok := ft.index[id]
-	if !ok {
-		return "", errors.New("Item not found:" + id)
-	}
-	file, err := os.Open(entry.SourcePath)
-	if err != nil {
-		return "", err
-	}
-	return htmlToText(file)
 }
 
 func htmlToText(r io.Reader) (string, error) {
