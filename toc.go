@@ -51,51 +51,6 @@ func init() {
 	gob.Register(&TocEntry{})
 }
 
-func serializeToc(toc Toc, filename string) error {
-	var err error
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-
-	enc := gob.NewEncoder(file)
-	for _, entry := range toc {
-		if entry.NumComments < 0 {
-			continue
-		}
-		err = enc.Encode(*entry)
-		if err != nil {
-			break
-		}
-	}
-	file.Close()
-	return err
-}
-
-func deserializeToc(filename string) (Toc, error) {
-	var toc Toc
-	var err error
-
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	dec := gob.NewDecoder(file)
-	for {
-		var entry TocEntry
-		err = dec.Decode(&entry)
-		if err != nil {
-			break
-		}
-		toc = append(toc, &entry)
-	}
-	if err == io.EOF {
-		err = nil
-	}
-	return toc, err
-}
-
 func parseLinkPage(r io.Reader) (Toc, error) {
 	node, err := html.Parse(r)
 	if err != nil {

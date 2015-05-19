@@ -269,34 +269,6 @@ func (ft dirFetcher) fetchItem(id string) (string, error) {
 	return htmlToText(file)
 }
 
-func loadToc() Toc {
-	os.Mkdir(buildDir, os.ModeDir|0775)
-
-	var toc Toc
-	var err error
-
-	filename := path.Join(buildDir, tocFilename)
-	fmt.Printf("*** deserializing toc from %s\n", filename)
-	toc, err = deserializeToc(filename)
-
-	if err != nil {
-		fmt.Printf("*** deserialization from %s failed, %v\n", filename, err.Error())
-
-		fmt.Printf("*** building toc from %s\n", pageDir)
-		toc, err = buildTOC(pageDir)
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Printf("*** serializing toc to %s\n", filename)
-		err = serializeToc(toc, filename)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return toc
-}
-
 func htmlToText(r io.Reader) (string, error) {
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -348,25 +320,4 @@ func cacheItem(entry *TocEntry, text string) {
 
 	symname := path.Join(indexDir, entry.ItemId)
 	os.Symlink(path.Join("..", textname), symname)
-}
-
-func savePage(entry *TocEntry) error {
-	if !entry.IsExternal {
-		return nil
-	}
-
-	os.Mkdir(cacheDir, os.ModeDir|0755)
-	os.Mkdir(indexDir, os.ModeDir|0755)
-
-	resp, err := http.Get(entry.Link)
-	if err != nil {
-		return err
-	}
-	filename := fmt.Sprintf("%s/%d-link.txt", cacheDir, entry.ItemId)
-	destFile, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(destFile, resp.Body)
-	return err
 }
