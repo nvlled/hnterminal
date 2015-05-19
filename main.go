@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	term "github.com/nsf/termbox-go"
+	"github.com/nvlled/control"
 	sel "github.com/nvlled/selec"
 	"github.com/nvlled/wind"
 	"io"
@@ -43,199 +44,22 @@ func parseFlags() (options, []string) {
 }
 
 func main() {
+
+	hnt := new(hnterminal)
+	hnt.pageno = 1
+	hnt.linkBrowser = newLinkBrowser(-1, viewSize)
+	hnt.threadViewer = NewLess(viewSize, "")
+	hnt.tab = wind.Tab()
+	hnt.info = new(infoBar)
+
 	opts, _ := parseFlags()
-	var ft fetcher
 	if opts.local != "" {
-		ft = newDirFetcher(opts.local)
+		hnt.fetcher = newDirFetcher(opts.local, true)
 	} else {
-		ft = remoteFetcher{}
+		hnt.fetcher = remoteFetcher{}
 	}
 
-	// TODO: aggregate in a struct
-	var toc Toc
-	var less_ *less
-	var browser *TocBrowser
-	var info = infoBar{""}
-	var formattedToc []string
-	currentPage := 1
-	tocOffset := 0
-
-	mainLayer := createLayer(
-		wind.Defer(func() wind.Layer {
-			if browser == nil {
-				// avoid erroneous nil comparison
-				return nil
-			}
-			return browser.Layer()
-		}),
-		wind.Defer(func() wind.Layer {
-			if less_ == nil {
-				// avoid erroneous nil comparison
-				return nil
-			}
-			return less_
-		}),
-		&info,
-	)
-
-	term.Init()
-	canvas := wind.NewTermCanvas()
-
-	draw := make(chan int, 1)
-	redraw := func() { draw <- 1 }
-	blocked := false
-	block := func(s string) { info.contents = s; redraw(); blocked = true }
-	unblock := func() { info.contents = ""; redraw(); blocked = false }
-
-	loadItem := func() *less {
-		block("fetching page...")
-		redraw()
-
-		i := browser.SelectedIndex()
-		entry := toc[i]
-		text, err := ft.fetchItem(entry.ItemId)
-		cacheItem(entry, text)
-
-		if err != nil {
-			text = fmt.Sprintf("[%s]ERROR :: %s", entry.ItemId, err.Error())
-		}
-		less_ = NewLess(viewSize, text)
-
-		unblock()
-		return less_
-	}
-	loadLinkPage := func(n int) {
-		block("fetching page...")
-		currentPage += n
-
-		newToc, _ := ft.fetchLinkPage(currentPage)
-		if n > 0 {
-			tocOffset += len(toc) * n
-		} else {
-			tocOffset += len(newToc) * n
-		}
-
-		toc = newToc
-		unblock()
-		formattedToc = formatToc(toc, tocOffset)
-		browser = NewTocBrowser(viewSize, formattedToc)
-	}
-	saveItemLink := func() {
-		i := browser.SelectedIndex()
-		entry := toc[i]
-		block("fetching [" + entry.Link + "]")
-		err := savePage(entry)
-		unblock()
-		if err != nil {
-			info.contents = "error : " + err.Error() + "; [" + entry.Link + "]"
-		}
-	}
-
-	events := NewEvents()
-
-	// everytime an event has been processed, invoke redraw()
-	events.Done = func(_ term.Event) { redraw() }
-
-	// draw thread
-	go func() {
-		for range draw {
-			canvas.Clear()
-			mainLayer.Render(canvas)
-			term.Flush()
-		}
-	}()
-
-	// input thread
-	go func() {
-		for {
-			e := term.PollEvent()
-			if e.Key == term.KeyCtrlC {
-				term.Close()
-				os.Exit(0)
-			} else if e.Type == term.EventResize {
-				wind.ClearCache(mainLayer)
-				// tocBrowser doesn't properly resize,
-				// just create a new one as a temp fix
-				browser = NewTocBrowser(viewSize, formattedToc)
-				redraw()
-			}
-			if !blocked {
-				events.C <- e
-			}
-		}
-	}()
-
-	block("fetching page...")
-	redraw()
-	toc, err := ft.fetchLinkPage(currentPage)
-	if err != nil {
-		term.Close()
-		println(err.Error())
-		return
-	}
-	formattedToc = formatToc(toc, tocOffset)
-	browser = NewTocBrowser(viewSize, formattedToc)
-	unblock()
-	redraw()
-
-	events.Each(func(e term.Event) (abort bool) {
-		switch e.Key {
-
-		case term.KeyCtrlR:
-			loadLinkPage(0)
-		case term.KeyCtrlN:
-			loadLinkPage(1)
-		case term.KeyCtrlP:
-			if currentPage > 1 {
-				loadLinkPage(-1)
-			}
-
-		case term.KeyCtrlS:
-			saveItemLink()
-
-		// Navigation
-		case term.KeyCtrlC:
-			abort = true
-		case term.KeyArrowDown:
-			browser.SelectDown()
-		case term.KeyArrowUp:
-			browser.SelectUp()
-		case term.KeyHome:
-			browser.MoveStart()
-		case term.KeyEnd:
-			browser.MoveEnd()
-		case term.KeyPgup:
-			browser.MovePrevPage()
-		case term.KeyPgdn:
-			browser.MoveNextPage()
-
-		case term.KeyEnter:
-			events_ := events.Fork()
-			go func() {
-				for e := range events.C {
-					if e.Ch == 'q' {
-						close(events_.C)
-						info.contents = ""
-						break
-					} else if e.Key == term.KeyCtrlS {
-						saveItemLink()
-					} else {
-						events_.C <- e
-					}
-				}
-			}()
-			less_ = loadItem()
-			viewText(events_, less_, loadItem)
-			redraw()
-			less_ = nil
-		}
-
-		return
-	})
-}
-
-func createLayer(browser wind.Layer, threadView wind.Defer, info *infoBar) wind.Layer {
-	return wind.Vlayer(
+	mainLayer := wind.Vlayer(
 		wind.SetColor(
 			uint16(term.ColorRed),
 			uint16(term.ColorDefault),
@@ -246,38 +70,74 @@ func createLayer(browser wind.Layer, threadView wind.Defer, info *infoBar) wind.
 			`),
 		),
 		wind.Line('─'),
-		wind.SizeH(
-			viewSize,
-			wind.Either(
-				threadView,
-				browser,
-			),
+		hnt.tab.SetElements(
+			hnt.linkBrowser,
+			hnt.threadViewer,
 		),
 		wind.Line('─'),
-		info,
+		hnt.info,
 	)
-}
+	canvas := wind.NewTermCanvas()
 
-func viewText(events *Events, less *less, refresh func() *less) {
-	events.Each(func(e term.Event) (abort bool) {
-		switch e.Key {
-		case term.KeyHome:
-			less.Home()
-		case term.KeyEnd:
-			less.End()
-		case term.KeyPgdn:
-			less.PageDown()
-		case term.KeyPgup:
-			less.PageUp()
-		case term.KeyArrowUp:
-			less.ScrollUp()
-		case term.KeyArrowDown:
-			less.ScrollDown()
-		case term.KeyCtrlR:
-			less = refresh()
+	term.Init()
+
+	drawchan := make(chan int, 1)
+	draw := func() { drawchan <- 1 }
+	go func() {
+		draw()
+		for range drawchan {
+			term.Clear(0, 0)
+			mainLayer.Render(canvas)
+			term.Flush()
 		}
-		return
-	})
+	}()
+
+	control.New(
+		control.TermSource,
+		control.Opts{
+			EventEnded: func(_ interface{}) { draw() },
+		},
+		func(flow *control.Flow) {
+			flow.New(control.Opts{Interrupt: control.KeyInterrupt(term.KeyEsc)},
+				func(flow *control.Flow) {
+					hnt.loadCurrentPage(flow)
+				})
+
+			draw()
+			opts := control.Opts{
+				Interrupt: control.TermInterrupt(func(e term.Event, ir control.Irctrl) {
+					if e.Key == term.KeyEsc {
+						ir.StopNext()
+					} else if e.Key == term.KeyCtrlC {
+						ir.Stop()
+					}
+				}),
+			}
+			flow.TermTransfer(opts, func(flow *control.Flow, e term.Event) {
+				switch e.Key {
+				case term.KeyCtrlR:
+					hnt.loadCurrentPage(flow)
+				case term.KeyCtrlP:
+					hnt.loadPrevPage(flow)
+				case term.KeyCtrlN:
+					hnt.loadNextPage(flow)
+
+				case term.KeyArrowUp:
+					hnt.linkBrowser.SelectUp()
+				case term.KeyArrowDown:
+					hnt.linkBrowser.SelectDown()
+
+				case term.KeyEnter:
+					hnt.tab.ShowIndex(1)
+					draw()
+					hnt.viewSelectedThread(flow)
+					hnt.tab.ShowIndex(0)
+					draw()
+				}
+			})
+		},
+	)
+	term.Close()
 }
 
 func formatToc(toc Toc, offset int) []string {
@@ -357,9 +217,10 @@ func (_ localFetcher) fetchItem(id string) (string, error) {
 type dirFetcher struct {
 	toc   Toc
 	index map[string]*TocEntry
+	delay bool
 }
 
-func newDirFetcher(dir string) *dirFetcher {
+func newDirFetcher(dir string, delayArg ...bool) *dirFetcher {
 	toc, err := buildTOC(dir)
 	index := make(map[string]*TocEntry)
 	for _, entry := range toc {
@@ -368,13 +229,23 @@ func newDirFetcher(dir string) *dirFetcher {
 	if err != nil {
 		panic(err)
 	}
+
+	delay := false
+	if len(delayArg) > 0 {
+		delay = delayArg[0]
+	}
+
 	return &dirFetcher{
 		toc:   toc,
 		index: index,
+		delay: delay,
 	}
 }
 
 func (ft dirFetcher) fetchLinkPage(pageno int) (Toc, error) {
+	if ft.delay {
+		nap()
+	}
 	start := (pageno - 1) * viewSize
 	end := min(start+viewSize, len(ft.toc))
 	if start < len(ft.toc) {
@@ -384,6 +255,9 @@ func (ft dirFetcher) fetchLinkPage(pageno int) (Toc, error) {
 }
 
 func (ft dirFetcher) fetchItem(id string) (string, error) {
+	if ft.delay {
+		nap()
+	}
 	entry, ok := ft.index[id]
 	if !ok {
 		return "", errors.New("Item not found:" + id)

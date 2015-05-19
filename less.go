@@ -9,6 +9,7 @@ import (
 type less struct {
 	buffer   []string
 	viewSize int
+	height   int
 	offset   int
 }
 
@@ -17,6 +18,7 @@ func NewLess(size int, text string) *less {
 	return &less{
 		buffer:   buffer,
 		viewSize: min(size, len(buffer)),
+		height:   size,
 		offset:   0,
 	}
 }
@@ -27,6 +29,13 @@ func (less *less) Render(canvas wind.Canvas) {
 	for y, line := range less.CurrentPage() {
 		canvas.DrawText(0, y, line, 0, 0)
 	}
+}
+
+func (less *less) SetText(text string) {
+	buffer := strings.Split(text, "\n")
+	less.buffer = buffer
+	less.viewSize = min(less.height, len(buffer))
+	less.offset = 0
 }
 
 func (less *less) CurrentPage() []string {
