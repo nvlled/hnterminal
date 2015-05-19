@@ -92,7 +92,20 @@ func (hnt *hnterminal) loadPrevPage(flow *control.Flow) {
 	hnt.loadPage(-1, flow)
 }
 
+func (hnt *hnterminal) controlThreadViewer(flow *control.Flow) {
+	flow.TermTransfer(control.Opts{}, func(flow *control.Flow, e term.Event) {
+		switch e.Key {
+		case term.KeyArrowDown:
+			hnt.threadViewer.ScrollDown()
+		case term.KeyArrowUp:
+			hnt.threadViewer.ScrollUp()
+		}
+	})
+}
+
 func (hnt *hnterminal) viewSelectedThread(flow *control.Flow) {
+	hnt.tab.ShowIndex(1)
+	hnt.draw(flow)
 	flow.New(control.Opts{}, func(flow *control.Flow) {
 		var text string
 		var err error
@@ -119,13 +132,8 @@ func (hnt *hnterminal) viewSelectedThread(flow *control.Flow) {
 		hnt.threadViewer.SetText(text)
 		hnt.info.contents = "thread loaded"
 		hnt.draw(flow)
-		flow.TermTransfer(control.Opts{}, func(flow *control.Flow, e term.Event) {
-			switch e.Key {
-			case term.KeyArrowDown:
-				hnt.threadViewer.ScrollDown()
-			case term.KeyArrowUp:
-				hnt.threadViewer.ScrollUp()
-			}
-		})
+		hnt.controlThreadViewer(flow)
 	})
+	hnt.tab.ShowIndex(0)
+	hnt.draw(flow)
 }
