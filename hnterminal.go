@@ -94,11 +94,36 @@ func (hnt *hnterminal) loadPrevPage(flow *control.Flow) {
 
 func (hnt *hnterminal) controlThreadViewer(flow *control.Flow) {
 	flow.TermTransfer(control.Opts{}, func(flow *control.Flow, e term.Event) {
-		switch e.Key {
-		case term.KeyArrowDown:
-			hnt.threadViewer.ScrollDown()
-		case term.KeyArrowUp:
-			hnt.threadViewer.ScrollUp()
+		if e.Ch == 0 {
+			switch e.Key {
+			case term.KeyArrowDown:
+				hnt.threadViewer.ScrollDown()
+			case term.KeyArrowUp:
+				hnt.threadViewer.ScrollUp()
+			case term.KeyCtrlB:
+				fallthrough
+			case term.KeyPgup:
+				hnt.threadViewer.PageUp()
+			case term.KeyCtrlF:
+				fallthrough
+			case term.KeyPgdn:
+				hnt.threadViewer.PageDown()
+			case term.KeyHome:
+				hnt.threadViewer.Home()
+			case term.KeyEnd:
+				hnt.threadViewer.End()
+			}
+		} else {
+			switch e.Ch {
+			case 'g':
+				hnt.threadViewer.Home()
+			case 'G':
+				hnt.threadViewer.End()
+			case 'j':
+				hnt.threadViewer.ScrollDown()
+			case 'k':
+				hnt.threadViewer.ScrollUp()
+			}
 		}
 	})
 }
