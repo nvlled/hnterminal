@@ -177,7 +177,7 @@ func htmlToText(r io.Reader) (string, error) {
 	aTable := sel.And(sel.Tag("table"), sel.AttrOnly("border", "0"))
 	posts := sel.SelectAll(node, aTable)
 	if len(posts) < 1 {
-		return "", errors.New("no posts found, probably not a valid hn page\n" + string(data))
+		return "", errors.New("no posts found, probably not a valid hn page\n")
 	}
 
 	buffer := bytes.NewBuffer(nil)
