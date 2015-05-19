@@ -156,14 +156,6 @@ func buildTOC(dirname string) (Toc, error) {
 	return toc, nil
 }
 
-func isDir(filename string) bool {
-	info, err := os.Lstat(filename)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
-}
-
 func selText(node *html.Node, preds []sel.Pred) string {
 	matched := sel.SelectOne(node, preds...)
 	if matched != nil {

@@ -1,9 +1,23 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"unicode"
 )
+
+func fileExists(path string) bool {
+	_, err := os.Open(path)
+	return err == nil
+}
+
+func isDir(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
 
 func chop(r string, maxlen int) (string, string) {
 	if len(r) < maxlen {
