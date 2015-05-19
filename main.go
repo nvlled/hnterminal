@@ -23,12 +23,9 @@ import (
 // TODO: rename variable names
 
 var (
-	viewSize    = 28
-	buildDir    = "build"
-	tocFilename = "toc"
-	pageDir     = path.Join(os.Getenv("HOME"), "hnpages/new")
-	cacheDir    = "cache"
-	indexDir    = path.Join(cacheDir, "index")
+	viewSize = 28
+	cacheDir = "cache"
+	indexDir = path.Join(cacheDir, "index")
 )
 
 type options struct {
