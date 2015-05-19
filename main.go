@@ -5,7 +5,6 @@ import (
 	"code.google.com/p/go.net/html"
 	"compress/gzip"
 	"errors"
-	"flag"
 	"fmt"
 	term "github.com/nsf/termbox-go"
 	"github.com/nvlled/control"
@@ -28,34 +27,8 @@ var (
 	indexDir = path.Join(cacheDir, "index")
 )
 
-type options struct {
-	local string
-}
-
-func parseFlags() (options, []string) {
-	var opts options
-	flag.StringVar(&opts.local, "local", "", "set local directory")
-	flag.Parse()
-	return opts, flag.Args()
-}
-
-func main() {
-
-	hnt := new(hnterminal)
-	hnt.pageno = 1
-	hnt.linkBrowser = newLinkBrowser(-1, viewSize)
-	hnt.threadViewer = NewLess(viewSize, "")
-	hnt.tab = wind.Tab()
-	hnt.info = new(infoBar)
-
-	opts, _ := parseFlags()
-	if opts.local != "" {
-		hnt.fetcher = newDirFetcher(opts.local, true)
-	} else {
-		hnt.fetcher = remoteFetcher{}
-	}
-
-	mainLayer := wind.Vlayer(
+func createLayer(hnt *hnterminal) wind.Layer {
+	return wind.Vlayer(
 		wind.SetColor(
 			uint16(term.ColorRed),
 			uint16(term.ColorDefault),
@@ -73,6 +46,33 @@ func main() {
 		wind.Line('─'),
 		hnt.info,
 	)
+}
+
+func main() {
+	hnt := new(hnterminal)
+	hnt.pageno = 1
+	hnt.linkBrowser = newLinkBrowser(-1, viewSize)
+	hnt.threadViewer = NewLess(viewSize, "")
+	hnt.tab = wind.Tab()
+	hnt.info = new(infoBar)
+	hnt.fetcher = remoteFetcher{}
+
+	direct := false
+	itemId := ""
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		if !fileExists(arg) {
+			println("file not found:", arg)
+		}
+		if isDir(arg) {
+			hnt.fetcher = newDirFetcher(arg)
+		} else {
+			direct = true
+			itemId = arg
+		}
+	}
+
+	mainLayer := createLayer(hnt)
 	canvas := wind.NewTermCanvas()
 
 	term.Init()
@@ -88,51 +88,80 @@ func main() {
 		}
 	}()
 
-	control.New(
-		control.TermSource,
-		control.Opts{
-			EventEnded: func(_ interface{}) { draw() },
-		},
-		func(flow *control.Flow) {
-			flow.New(control.Opts{Interrupt: control.KeyInterrupt(term.KeyEsc)},
-				func(flow *control.Flow) {
-					hnt.loadCurrentPage(flow)
-				})
+	if direct {
+		file, err := os.Open(itemId)
 
-			draw()
-			opts := control.Opts{
-				Interrupt: control.TermInterrupt(func(e term.Event, ir control.Irctrl) {
-					if e.Key == term.KeyEsc {
-						ir.StopNext()
-					} else if e.Key == term.KeyCtrlC {
-						ir.Stop()
-					}
-				}),
-			}
-			flow.TermTransfer(opts, func(flow *control.Flow, e term.Event) {
-				switch e.Key {
-				case term.KeyCtrlR:
-					hnt.loadCurrentPage(flow)
-				case term.KeyCtrlP:
-					hnt.loadPrevPage(flow)
-				case term.KeyCtrlN:
-					hnt.loadNextPage(flow)
+		if err != nil {
+			term.Close()
+			println(err.Error())
+			return
+		}
+		text, err := htmlToText(file)
+		if err != nil {
+			term.Close()
+			println(err.Error())
+			return
+		}
+		hnt.threadViewer.SetText(text)
+		hnt.tab.ShowIndex(1)
+		draw()
+		control.New(
+			control.TermSource,
+			control.Opts{
+				EventEnded: func(_ interface{}) { draw() },
+				Interrupt: control.Interrupts(
+					control.KeyInterrupt(term.KeyEsc),
+					control.KeyInterrupt(term.KeyCtrlC),
+				),
+			},
+			func(flow *control.Flow) {
+				hnt.controlThreadViewer(flow)
+			},
+		)
+	} else {
+		control.New(
+			control.TermSource,
+			control.Opts{
+				EventEnded: func(_ interface{}) { draw() },
+			},
 
-				case term.KeyArrowUp:
-					hnt.linkBrowser.SelectUp()
-				case term.KeyArrowDown:
-					hnt.linkBrowser.SelectDown()
+			func(flow *control.Flow) {
+				flow.New(control.Opts{Interrupt: control.KeyInterrupt(term.KeyEsc)},
+					func(flow *control.Flow) {
+						hnt.loadCurrentPage(flow)
+					})
 
-				case term.KeyEnter:
-					hnt.tab.ShowIndex(1)
-					draw()
-					hnt.viewSelectedThread(flow)
-					hnt.tab.ShowIndex(0)
-					draw()
+				draw()
+				opts := control.Opts{
+					Interrupt: control.TermInterrupt(func(e term.Event, ir control.Irctrl) {
+						if e.Key == term.KeyEsc {
+							ir.StopNext()
+						} else if e.Key == term.KeyCtrlC {
+							ir.Stop()
+						}
+					}),
 				}
-			})
-		},
-	)
+				flow.TermTransfer(opts, func(flow *control.Flow, e term.Event) {
+					switch e.Key {
+					case term.KeyCtrlR:
+						hnt.loadCurrentPage(flow)
+					case term.KeyCtrlP:
+						hnt.loadPrevPage(flow)
+					case term.KeyCtrlN:
+						hnt.loadNextPage(flow)
+
+					case term.KeyArrowUp:
+						hnt.linkBrowser.SelectUp()
+					case term.KeyArrowDown:
+						hnt.linkBrowser.SelectDown()
+
+					case term.KeyEnter:
+						hnt.viewSelectedThread(flow)
+					}
+				})
+			},
+		)
+	}
 	term.Close()
 }
 
