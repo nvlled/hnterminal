@@ -138,10 +138,7 @@ func buildTOC(dirname string) (Toc, error) {
 		}
 
 		file, err := os.Open(fullname)
-		if err != nil {
-			return nil, err
-		}
-		node, err := html.Parse(file)
+		node, err := readNode(file)
 		if err != nil {
 			return nil, err
 		}

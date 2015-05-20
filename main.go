@@ -185,10 +185,10 @@ func nap() {
 	time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
 }
 
-func htmlToText(r io.Reader) (string, error) {
+func readNode(r io.Reader) (*html.Node, error) {
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	buf := bytes.NewBuffer(data)
 
@@ -199,7 +199,11 @@ func htmlToText(r io.Reader) (string, error) {
 	} else {
 		node, err = html.Parse(buf)
 	}
+	return node, err
+}
 
+func htmlToText(r io.Reader) (string, error) {
+	node, err := readNode(r)
 	if err != nil {
 		return "", err
 	}
