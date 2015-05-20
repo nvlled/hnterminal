@@ -24,7 +24,7 @@ func newLinkBrowser(w, h int) *linkBrowser {
 
 type hnterminal struct {
 	linkBrowser  *linkBrowser
-	threadViewer *less
+	threadViewer *severe.Less
 	info         *infoBar
 
 	fetcher   fetcher
@@ -100,6 +100,10 @@ func (hnt *hnterminal) controlThreadViewer(flow *control.Flow) {
 				hnt.threadViewer.ScrollDown()
 			case term.KeyArrowUp:
 				hnt.threadViewer.ScrollUp()
+			case term.KeyArrowLeft:
+				hnt.threadViewer.ScrollLeft()
+			case term.KeyArrowRight:
+				hnt.threadViewer.ScrollRight()
 			case term.KeyCtrlB:
 				fallthrough
 			case term.KeyPgup:
@@ -109,16 +113,16 @@ func (hnt *hnterminal) controlThreadViewer(flow *control.Flow) {
 			case term.KeyPgdn:
 				hnt.threadViewer.PageDown()
 			case term.KeyHome:
-				hnt.threadViewer.Home()
+				hnt.threadViewer.ScrollStartY()
 			case term.KeyEnd:
-				hnt.threadViewer.End()
+				hnt.threadViewer.ScrollEndY()
 			}
 		} else {
 			switch e.Ch {
 			case 'g':
-				hnt.threadViewer.Home()
+				hnt.threadViewer.ScrollStartY()
 			case 'G':
-				hnt.threadViewer.End()
+				hnt.threadViewer.ScrollEndY()
 			case 'j':
 				hnt.threadViewer.ScrollDown()
 			case 'k':
@@ -139,10 +143,15 @@ func (hnt *hnterminal) viewSelectedThread(flow *control.Flow) {
 			i, _ := hnt.linkBrowser.SelectedItem()
 			entry = hnt.toc[i]
 
-			hnt.threadViewer.SetText("  ")
+			hnt.threadViewer.SetText("")
 			hnt.info.contents = "loading thread data..."
 			hnt.draw(flow)
 			text, err = hnt.fetcher.fetchItem(entry.ItemId)
+
+			// TODO: This should be prevented
+			//       or else error: multithread access not allowed
+			//flow.TermTransfer(control.Opts{}, func(flow *control.Flow, e term.Event) {
+			//})
 		})
 		if flow.IsDead() {
 			hnt.info.contents = "aborted"

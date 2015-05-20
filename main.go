@@ -9,6 +9,7 @@ import (
 	term "github.com/nsf/termbox-go"
 	"github.com/nvlled/control"
 	sel "github.com/nvlled/selec"
+	"github.com/nvlled/severe"
 	"github.com/nvlled/wind"
 	"io"
 	"io/ioutil"
@@ -52,7 +53,7 @@ func main() {
 	hnt := new(hnterminal)
 	hnt.pageno = 1
 	hnt.linkBrowser = newLinkBrowser(-1, viewSize)
-	hnt.threadViewer = NewLess(viewSize, "")
+	hnt.threadViewer = severe.NewLess(120, viewSize)
 	hnt.tab = wind.Tab()
 	hnt.info = new(infoBar)
 	hnt.fetcher = remoteFetcher{}
