@@ -38,9 +38,10 @@ func (_ remoteFetcher) fetchItem(id string) (string, error) {
 }
 
 type dirFetcher struct {
-	toc   Toc
-	index map[string]*TocEntry
-	delay bool
+	toc      Toc
+	index    map[string]*TocEntry
+	delay    bool
+	viewSize int
 }
 
 func newDirFetcher(dir string, delayArg ...bool) *dirFetcher {
@@ -59,9 +60,10 @@ func newDirFetcher(dir string, delayArg ...bool) *dirFetcher {
 	}
 
 	return &dirFetcher{
-		toc:   toc,
-		index: index,
-		delay: delay,
+		toc:      toc,
+		index:    index,
+		delay:    delay,
+		viewSize: 28,
 	}
 }
 

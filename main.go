@@ -23,7 +23,6 @@ import (
 // TODO: rename variable names
 
 var (
-	viewSize = 28
 	cacheDir = "cache"
 	indexDir = path.Join(cacheDir, "index")
 )
@@ -39,21 +38,25 @@ func createLayer(hnt *hnterminal) wind.Layer {
 			┃  │ │  ╲┃
 			`),
 		),
-		wind.Line('─'),
+		wind.LineH('─'),
 		hnt.tab.SetElements(
-			hnt.linkBrowser,
+			wind.Free(hnt.linkBrowser),
 			hnt.threadViewer,
 		),
-		wind.Line('─'),
-		hnt.info,
+		wind.LineH('─'),
+		wind.SizeH(2, hnt.info),
 	)
 }
 
 func main() {
 	hnt := new(hnterminal)
 	hnt.pageno = 1
-	hnt.linkBrowser = newLinkBrowser(-1, viewSize)
-	hnt.threadViewer = severe.NewLess(120, viewSize)
+
+	hnt.linkBrowser = newLinkBrowser(0, 0)
+	hnt.threadViewer = severe.NewLess(0, 0)
+	hnt.linkBrowser.AutoSize = true
+	hnt.threadViewer.AutoSize = true
+
 	hnt.tab = wind.Tab()
 	hnt.info = new(infoBar)
 	hnt.fetcher = remoteFetcher{}
@@ -127,12 +130,19 @@ func main() {
 			},
 
 			func(flow *control.Flow) {
+				w, h := canvas.Dimension()
+				wind.PreRender(mainLayer, w, h)
+				if ft, ok := hnt.fetcher.(*dirFetcher); ok {
+					_, h := hnt.linkBrowser.Size()
+					ft.viewSize = h
+				}
+
 				flow.New(control.Opts{Interrupt: control.KeyInterrupt(term.KeyEsc)},
 					func(flow *control.Flow) {
 						hnt.loadCurrentPage(flow)
 					})
-
 				draw()
+
 				opts := control.Opts{
 					Interrupt: control.TermInterrupt(func(e term.Event, ir control.Irctrl) {
 						if e.Key == term.KeyEsc {
