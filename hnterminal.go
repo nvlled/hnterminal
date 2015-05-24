@@ -74,6 +74,7 @@ func (hnt *hnterminal) loadPage(step int, flow *control.Flow) error {
 		}
 
 		linkBrowser.links = formatToc(toc, hnt.tocOffset)
+		linkBrowser.RepositionCursor()
 		hnt.toc = toc
 		hnt.info.contents = "done loading page"
 	})
@@ -139,8 +140,13 @@ func (hnt *hnterminal) viewSelectedThread(flow *control.Flow) {
 		var text string
 		var err error
 		var entry *TocEntry
+
+		i, _ := hnt.linkBrowser.SelectedItem()
+		if i < 0 {
+			return
+		}
+
 		control.Cancellable(flow, func() {
-			i, _ := hnt.linkBrowser.SelectedItem()
 			entry = hnt.toc[i]
 
 			hnt.threadViewer.SetText("")

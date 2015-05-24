@@ -71,9 +71,9 @@ func (ft dirFetcher) fetchLinkPage(pageno int) (Toc, error) {
 	if ft.delay {
 		nap()
 	}
-	start := (pageno - 1) * viewSize
-	end := min(start+viewSize, len(ft.toc))
-	if start < len(ft.toc) {
+	start := (pageno - 1) * ft.viewSize
+	end := min(start+ft.viewSize, len(ft.toc))
+	if start < end {
 		return ft.toc[start:end], nil
 	}
 	return nil, errors.New("no more links")
